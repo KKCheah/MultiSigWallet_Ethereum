@@ -1,48 +1,36 @@
 pragma solidity 0.7.5;
 pragma abicoder v2;
-
-//– Anyone should be able to deposit ether into the smart contract
-
-//The contract creator should be able to input (1): the addresses of the owners and (2):  
-//the numbers of approvals required for a transfer, in the constructor. For example, 
-//input 3 addresses and set the approval limit to 2. 
-
-//– Anyone of the owners should be able to create a transfer request. 
-//The creator of the transfer request will specify what amount and to what address the transfer will be made.
-
-//Owners should be able to approve transfer requests.
-
-//When a transfer request has the required approvals, the transfer should be sent. 
-
-contract Deposit {
+contract MultiSigWallet{
     
-    
-    constructor(){
-     address owner = msg.sender;
-    }
-    
-    //double mapping
+   
+    //mapping
     mapping(address => mapping(uint => uint))depositID;
-    mapping(address => mapping(uint => bool))approvals;
-    mapping(address => mapping(uint => uint))transactionID; //possible to triple map?
     mapping(address => mapping(uint => uint))transferSetupID;
     mapping(address => mapping(uint => uint))balance;
     mapping(address => mapping(uint => address))depositOwner;
-    //mapping(address => uint) transactionID;
-   
+    
+    //state variables?
     address[] walletOwners;
     address payable[] clearToAdd;
     address payable[] adr;
-    address payable[] toAdd;
+    address[] toAdd;
+    address[] toClear;
+    address blankAddress;
+    bool[] toFalse;
+    string fillerString = "Just filling a return";
+    uint fillerInt = 0;
     
-    struct testPush{
+    
+    //structs
+    struct testPush {
          address payable[] depositUser;
          address payable[] approvedUsersForTransferRequest;
     } 
  
+    //struct to keep deposit records
     struct depositRecord {
        uint txnId;
-       address depositUser;
+       address depositOwner;
        uint numberOfOwners;
        uint numberOfApprovalsForTransfer;
        uint valueOfDeposit;
@@ -50,105 +38,117 @@ contract Deposit {
    
    depositRecord[] InitialDeposit;
    
-    struct transferSetting {
-       uint txnId;
-       address payable[] depositUser;
-       bool withdrawStatus;
-       
+    //struct for setting transfer permission   
+    struct transferPermission {
+       uint depositId;
+       address[] depositUser;
+       bool[] withdrawStatus;
+       uint transferRequestID;
+       bool settingComplete;
    }
    
-   transferSetting[] transferSetup;
+   transferPermission[] transferPermissionSetting;
    
-   
-   
-   struct transferRequest {
-       uint txnId;
-       address requestUser;
-       uint valueOfTransfer;
-       address addressToTransfer;
-       uint numberOfOwners;
-       uint numberOfApprovalsForTransfer;
+   //struct for storing transfer information
+   struct transferInfo {
+       uint depositID;
+       uint transferRequestID;
+       uint transferValue;
+       bool finalApproval;
    }
    
-   transferRequest[] transferRequested;
-   
-   struct transferApproval {
-       uint txnId;
-       address approvingUser;
-       bool approvalStatus;
-   }
-   
-   transferApproval[] transferApproved;
-  
-    
-    
-    function depositEtherToContract(uint _txnId, uint _totalOwners, uint _approvalsForTransfer) public payable returns (string memory){
-       require(_txnId > 0, "txnId must be a number above 0");
-       uint mappedTxnId = _txnId;
-       
-       transactionID[msg.sender][_txnId] = mappedTxnId;
-       depositOwner[msg.sender][_txnId] = msg.sender; 
-       balance[msg.sender][_txnId] = msg.value;
-       
-       for (uint i = 0; i < InitialDeposit.length; i++) {
-           require(InitialDeposit[i].txnId !=  transactionID[msg.sender][_txnId], "txnId duplicate, please key in an unused random deposit transaction ID");
-       }
-        InitialDeposit.push(depositRecord(transactionID[msg.sender][_txnId], msg.sender, _totalOwners, _approvalsForTransfer, msg.value));
-        depositID[msg.sender][_txnId] = InitialDeposit.length;
-        return "Deposit success, please key in deposit transaction ID in the future to check deposit";
+    //function to deposit Ether into this contract
+    function depositEtherToContract(uint _totalOwners, uint _approvalsForTransfer) public payable returns (string memory, uint){
+        require(msg.value > 0, "There is no Ether being deposited");
+        assert(msg.value > 0);
+        
+        uint depositIndex = InitialDeposit.length;
+        InitialDeposit.push(depositRecord(depositID[msg.sender][depositIndex + 1], msg.sender, _totalOwners, _approvalsForTransfer, msg.value));
+
+        uint depositTxnID = InitialDeposit.length;
+        depositOwner[msg.sender][depositTxnID] = msg.sender; 
+        balance[msg.sender][depositTxnID] = msg.value;
+        depositID[msg.sender][depositTxnID] = depositTxnID;
+        
+        return ("Deposit success, please key in deposit transaction ID in the future to check deposit. Your Txn ID is", depositTxnID);
     }
     
-    //For deposit owner to track their deposit
+    //function to check the deposit using the Txn ID
     function findDeposit(uint _txnId) public view returns (depositRecord memory) {
         uint depositNumber = depositID[msg.sender][_txnId];
+        require (depositNumber != 0, "You've key in an invalid number aka wrong transaction ID, 0 etc");
         return InitialDeposit[depositNumber - 1];
     }
-        
     
-    function assignSubOwners(uint _txnId, address payable _subOwner)public payable returns (string memory){
+    
+    //function to assign owner and subowner for specific deposit
+    function assignSubOwners(uint _txnId, address _subOwner)public returns (string memory, uint){
+        
+        
         uint depositNumber  = depositID[msg.sender][_txnId];
-        if(InitialDeposit[depositNumber - 1].numberOfOwners > toAdd.length){
+        uint depositIndexAssign = depositNumber - 1; //index starts at zero but content with length starts at 1
+        uint noShareOwners = InitialDeposit[depositIndexAssign].numberOfOwners;
+       
+        require (msg.sender == InitialDeposit[depositIndexAssign].depositOwner);
+        
+        if (noShareOwners > toAdd.length){
         toAdd.push(_subOwner);
+        toFalse.push(false);
+        
         } 
         
-        if (InitialDeposit[depositNumber - 1].numberOfOwners == toAdd.length) {
-            transferSetup.push(transferSetting(depositNumber, toAdd, false));
-            uint transferNumber = transferSetup.length;
+        if (noShareOwners == toAdd.length) {
+            uint transferRequestID = transferPermissionSetting.length;
+            transferPermissionSetting.push(transferPermission(depositNumber, toAdd, toFalse, transferRequestID, true));
+            
+            uint transferNumber = transferPermissionSetting.length;
             transferSetupID[msg.sender][_txnId] = transferNumber;
-            toAdd = clearToAdd;
-            return "All subOwners Filled";
+            delete toAdd;
+            delete toFalse;
+            return ("A address has been added to approve withdrawals, All subOwners Filled. Your transfer Request ID is", transferRequestID) ;
         }
-        return "it works";
-    }
         
-    function checkTransferSetting(uint _txnId)public view returns (transferSetting memory){
-        uint transferNumber = transferSetupID[msg.sender][_txnId];
-        return transferSetup[transferNumber - 1] ;
+        return ("A address has been added to approve withdrawals", fillerInt);
+        
     }
     
-    function requestForTransfer(uint _txnId, address _mainOwner, uint valueOfTransfer, address _transferTo) public returns (string memory){
+    //function to check status of withdrawal permission of specific depositNumber
+        function checkPermissionSetting(uint _txnId)public view returns (transferPermission memory){
+        uint transferNumber = transferSetupID[msg.sender][_txnId];
+        uint transferIndex = transferNumber - 1 ;
+        return transferPermissionSetting[transferIndex];
+    }
+    
+    //function to request for withdrawal from any of the owner/subOwners
+        function requestForTransfer(uint _txnId, address _mainOwner, uint _transferValue) public returns (string memory){
+       
         uint transferNumber = transferSetupID[_mainOwner][_txnId];
         bool scanStatus = false;
-        for (uint i = 0; transferSetup[transferNumber - 1].depositUser.length >= i; i++){
-            if (transferSetup[transferNumber - 1].depositUser[i] ==  msg.sender){
+        
+        
+        for (uint i = 0; transferPermissionSetting[transferNumber - 1].depositUser.length >= i; i++){
+            if (transferPermissionSetting[transferNumber - 1].depositUser[i] ==  msg.sender){
                 scanStatus = true;
+                transferPermissionSetting[transferNumber - 1].withdrawStatus[i] = true;
                 return "You may continue, verified Owner/SubOwner" ;
-                
             }
         }
+        
         if (scanStatus == false){
             return "You are not verified for the transaction stated, please key in txn ID again";
         } 
-        }
-    
-    function recordTransferRequest(uint _txnId, address _mainOwner, uint valueOfTransfer, address _transferTo)private {
         
+        return "Cheers?";
     }
     
-    
-    
+        function approveRequestForTransfer(uint _DepositID, uint _TransferID) public returns (string memory) {
+            
+            
+            
+        }
+        
+        function checkStatus(uint _index) public returns (address){
+            return toAdd[_index];
+        } 
     
 }
-        
-        
-        
