@@ -5,9 +5,10 @@ contract MultiSigWallet{
    
     //mapping
     mapping(address => mapping(uint => uint))depositID;
-    mapping(address => mapping(uint => uint))transferSetupID;
     mapping(address => mapping(uint => uint))balance;
     mapping(address => mapping(uint => address))depositOwner;
+    mapping(address => mapping(uint => mapping(uint => uint)))WithdrawSettingID;
+    mapping(address => mapping(uint => mapping(uint => uint)))TransferRequestID;
     
     //state variables?
     address[] walletOwners;
@@ -41,21 +42,24 @@ contract MultiSigWallet{
     //struct for setting transfer permission   
     struct transferPermission {
        uint depositId;
-       address[] depositUser;
+       address[] depositUsers;
        bool[] withdrawStatus;
-       uint transferRequestID;
+       uint WithdrawSettingID;
        bool settingComplete;
    }
    
    transferPermission[] transferPermissionSetting;
    
    //struct for storing transfer information
-   struct transferInfo {
+   struct withdrawalInfo {
        uint depositID;
-       uint transferRequestID;
+       uint WithdrawSettingID;
        uint transferValue;
+       address toTransfer;
        bool finalApproval;
    }
+   
+   withdrawalInfo[] withdrawalInformation;
    
     //function to deposit Ether into this contract
     function depositEtherToContract(uint _totalOwners, uint _approvalsForTransfer) public payable returns (string memory, uint){
@@ -98,14 +102,13 @@ contract MultiSigWallet{
         } 
         
         if (noShareOwners == toAdd.length) {
-            uint transferRequestID = transferPermissionSetting.length;
-            transferPermissionSetting.push(transferPermission(depositNumber, toAdd, toFalse, transferRequestID, true));
-            
+            uint transferSetupID = transferPermissionSetting.length;
+            transferPermissionSetting.push(transferPermission(depositNumber, toAdd, toFalse, transferSetupID, true));
             uint transferNumber = transferPermissionSetting.length;
-            transferSetupID[msg.sender][_txnId] = transferNumber;
+            WithdrawSettingID[msg.sender][_txnId][transferSetupID] = transferNumber;
             delete toAdd;
             delete toFalse;
-            return ("A address has been added to approve withdrawals, All subOwners Filled. Your transfer Request ID is", transferRequestID) ;
+            return ("A address has been added to approve withdrawals, All subOwners Filled. Your transfer Request ID is", transferSetupID) ;
         }
         
         return ("A address has been added to approve withdrawals", fillerInt);
@@ -113,32 +116,33 @@ contract MultiSigWallet{
     }
     
     //function to check status of withdrawal permission of specific depositNumber
-        function checkPermissionSetting(uint _txnId)public view returns (transferPermission memory){
-        uint transferNumber = transferSetupID[msg.sender][_txnId];
+        function checkPermissionSetting(uint _txnId, uint _transferSetupID)public view returns (transferPermission memory){
+        uint transferNumber = WithdrawSettingID[msg.sender][_txnId][_transferSetupID];
         uint transferIndex = transferNumber - 1 ;
         return transferPermissionSetting[transferIndex];
     }
     
     //function to request for withdrawal from any of the owner/subOwners
-        function requestForTransfer(uint _txnId, address _mainOwner, uint _transferValue) public returns (string memory){
+        function requestForTransfer(uint _depositID, uint _transferSetupID, address _mainOwner, uint _transferValue, address _recipient) public returns (string memory){
        
-        uint transferNumber = transferSetupID[_mainOwner][_txnId];
+        uint requestNumber = WithdrawSettingID[msg.sender][_depositID][_transferSetupID];
         bool scanStatus = false;
         
-        
-        for (uint i = 0; transferPermissionSetting[transferNumber - 1].depositUser.length >= i; i++){
-            if (transferPermissionSetting[transferNumber - 1].depositUser[i] ==  msg.sender){
+
+        for (uint i = 0; transferPermissionSetting[requestNumber - 1].depositUsers.length >= i; i++){
+            if (transferPermissionSetting[requestNumber - 1].depositUsers[i] ==  msg.sender){
                 scanStatus = true;
-                transferPermissionSetting[transferNumber - 1].withdrawStatus[i] = true;
+                transferPermissionSetting[requestNumber - 1].withdrawStatus[i] = true;
+                withdrawalInformation.push(withdrawalInfo(_depositID,requestNumber, _transferValue, _recipient, false));
                 return "You may continue, verified Owner/SubOwner" ;
             }
         }
         
         if (scanStatus == false){
-            return "You are not verified for the transaction stated, please key in txn ID again";
+            return "You are not verified for the transaction stated, please key in deposit and transfer setting ID again";
         } 
         
-        return "Cheers?";
+        return "You're not supposed to reach here";
     }
     
         function approveRequestForTransfer(uint _DepositID, uint _TransferID) public returns (string memory) {
