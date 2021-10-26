@@ -44,6 +44,7 @@ contract MultiSigWallet{
        uint depositId;
        address[] depositUsers;
        bool[] withdrawStatus;
+       uint minNoOfApproval;
        uint WithdrawSettingID;
        bool settingComplete;
    }
@@ -52,8 +53,10 @@ contract MultiSigWallet{
    
    //struct for storing transfer information
    struct withdrawalInfo {
+       address userRequesting;
        uint depositID;
        uint WithdrawSettingID;
+       uint TransferingNo;
        uint transferValue;
        address toTransfer;
        bool finalApproval;
@@ -67,9 +70,10 @@ contract MultiSigWallet{
         assert(msg.value > 0);
         
         uint depositIndex = InitialDeposit.length;
-        InitialDeposit.push(depositRecord(depositID[msg.sender][depositIndex + 1], msg.sender, _totalOwners, _approvalsForTransfer, msg.value));
-
         uint depositTxnID = InitialDeposit.length;
+        InitialDeposit.push(depositRecord(depositID[msg.sender][depositIndex], msg.sender, _totalOwners, _approvalsForTransfer, msg.value));
+
+        
         depositOwner[msg.sender][depositTxnID] = msg.sender; 
         balance[msg.sender][depositTxnID] = msg.value;
         depositID[msg.sender][depositTxnID] = depositTxnID;
@@ -80,8 +84,8 @@ contract MultiSigWallet{
     //function to check the deposit using the Txn ID
     function findDeposit(uint _txnId) public view returns (depositRecord memory) {
         uint depositNumber = depositID[msg.sender][_txnId];
-        require (depositNumber != 0, "You've key in an invalid number aka wrong transaction ID, 0 etc");
-        return InitialDeposit[depositNumber - 1];
+        require (depositNumber >= 0, "You've key in an invalid number aka wrong transaction ID etc");
+        return InitialDeposit[depositNumber];
     }
     
     
@@ -90,9 +94,9 @@ contract MultiSigWallet{
         
         
         uint depositNumber  = depositID[msg.sender][_txnId];
-        uint depositIndexAssign = depositNumber - 1; //index starts at zero but content with length starts at 1
+        uint depositIndexAssign = depositNumber; //index starts at zero but content with length starts at 1
         uint noShareOwners = InitialDeposit[depositIndexAssign].numberOfOwners;
-       
+        uint _minNoOfApproval = InitialDeposit[depositIndexAssign].numberOfApprovalsForTransfer;
         require (msg.sender == InitialDeposit[depositIndexAssign].depositOwner);
         
         if (noShareOwners > toAdd.length){
@@ -103,8 +107,8 @@ contract MultiSigWallet{
         
         if (noShareOwners == toAdd.length) {
             uint transferSetupID = transferPermissionSetting.length;
-            transferPermissionSetting.push(transferPermission(depositNumber, toAdd, toFalse, transferSetupID, true));
             uint transferNumber = transferPermissionSetting.length;
+            transferPermissionSetting.push(transferPermission(depositNumber, toAdd, toFalse, _minNoOfApproval, transferSetupID, true));
             WithdrawSettingID[msg.sender][_txnId][transferSetupID] = transferNumber;
             delete toAdd;
             delete toFalse;
@@ -118,41 +122,69 @@ contract MultiSigWallet{
     //function to check status of withdrawal permission of specific depositNumber
         function checkPermissionSetting(uint _txnId, uint _transferSetupID)public view returns (transferPermission memory){
         uint transferNumber = WithdrawSettingID[msg.sender][_txnId][_transferSetupID];
-        uint transferIndex = transferNumber - 1 ;
+        uint transferIndex = transferNumber;
         return transferPermissionSetting[transferIndex];
     }
     
     //function to request for withdrawal from any of the owner/subOwners
-        function requestForTransfer(uint _depositID, uint _transferSetupID, address _mainOwner, uint _transferValue, address _recipient) public returns (string memory){
-       
-        uint requestNumber = WithdrawSettingID[msg.sender][_depositID][_transferSetupID];
-        bool scanStatus = false;
+        function requestForTransfer(uint _depositID, uint _transferSetupID, address _mainOwner, uint _transferValue, address _recipient) public returns (string memory, uint){
         
-
-        for (uint i = 0; transferPermissionSetting[requestNumber - 1].depositUsers.length >= i; i++){
-            if (transferPermissionSetting[requestNumber - 1].depositUsers[i] ==  msg.sender){
+        uint transferNumber = withdrawalInformation.length;
+        uint requestNumber = WithdrawSettingID[_mainOwner][_depositID][_transferSetupID];
+        bool scanStatus = false;
+        uint requestIndex = requestNumber;
+        
+        
+        for (uint i = 0; transferPermissionSetting[requestNumber].depositUsers.length >= i; i++){
+            if (transferPermissionSetting[requestNumber].depositUsers[i] ==  msg.sender){
                 scanStatus = true;
-                transferPermissionSetting[requestNumber - 1].withdrawStatus[i] = true;
-                withdrawalInformation.push(withdrawalInfo(_depositID,requestNumber, _transferValue, _recipient, false));
-                return "You may continue, verified Owner/SubOwner" ;
+                transferPermissionSetting[requestNumber].withdrawStatus[i] = true;
+                TransferRequestID[msg.sender][requestNumber][withdrawalInformation.length] = transferNumber;
+                withdrawalInformation.push(withdrawalInfo(msg.sender, _depositID, requestIndex, transferNumber, _transferValue, _recipient, false));
+                return ("Request Pending, you transfer number is", transferNumber) ;
             }
         }
         
         if (scanStatus == false){
-            return "You are not verified for the transaction stated, please key in deposit and transfer setting ID again";
+            return ("You are not verified for the transaction stated, please key in deposit and transfer setting ID again, error code", 1);
         } 
         
-        return "You're not supposed to reach here";
+        return ("You're not supposed to reach here, error code:", 2);
     }
     
-        function approveRequestForTransfer(uint _DepositID, uint _TransferID) public returns (string memory) {
-            
-            
+        function check(uint _transferNo) public view returns(withdrawalInfo memory){
+            return withdrawalInformation[_transferNo];
+        }
+        
+        
+        function approveRequestForTransfer(address _requestUser, uint _transferNo) public returns (address, string memory) {
+            if (withdrawalInformation[_transferNo].userRequesting == _requestUser){
+                bool scanStatus = false;
+                uint countApproval = 0;
+                uint value = withdrawalInformation[_transferNo].WithdrawSettingID;
+                uint arrayLength = transferPermissionSetting[value].depositUsers.length;
+                for (uint z = 0; arrayLength >= z; z++){
+                    if (transferPermissionSetting[value].depositUsers[z] ==  msg.sender){ 
+                        scanStatus = true;
+                        transferPermissionSetting[value].withdrawStatus[z] = true;
+                        for (uint y = 0; transferPermissionSetting[value].withdrawStatus.length >= y; y++){
+                            if (transferPermissionSetting[value].withdrawStatus[y] = true) {
+                                countApproval++;
+                                if(countApproval>=transferPermissionSetting[value].minNoOfApproval){
+                                    transferFund();
+                                }
+                            }
+                        }
+                        return (msg.sender, "Approved");
+                    }
+                }
+                return (msg.sender, "Failed 1");
+            }
+        return (msg.sender, "Failed 2");
+        }
+        
+        function transferFund() private payable {
             
         }
         
-        function checkStatus(uint _index) public returns (address){
-            return toAdd[_index];
-        } 
-    
 }
