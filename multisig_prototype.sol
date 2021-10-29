@@ -171,7 +171,9 @@ contract MultiSigWallet{
                             if (transferPermissionSetting[value].withdrawStatus[y] = true) {
                                 countApproval++;
                                 if(countApproval>=transferPermissionSetting[value].minNoOfApproval){
-                                    transferFund();
+                                require (transferPermissionSetting[value].depositId == InitialDeposit[value].txnId, "Error at the comparison");
+                                
+                                return (msg.sender, "Congratulation");
                                 }
                             }
                         }
@@ -183,8 +185,7 @@ contract MultiSigWallet{
         return (msg.sender, "Failed 2");
         }
         
-        function transferFund() private payable {
+        function balanceTranfer(uint _transcationID, uint _valueOfTransfer, ) private {
             
         }
-        
 }
