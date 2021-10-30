@@ -15,19 +15,12 @@ contract MultiSigWallet{
     address payable[] clearToAdd;
     address payable[] adr;
     address[] toAdd;
-    address[] toClear;
-    address blankAddress;
     bool[] toFalse;
-    string fillerString = "Just filling a return";
     uint fillerInt = 0;
     
     
     //structs
-    struct testPush {
-         address payable[] depositUser;
-         address payable[] approvedUsersForTransferRequest;
-    } 
- 
+
     //struct to keep deposit records
     struct depositRecord {
        uint txnId;
@@ -63,6 +56,10 @@ contract MultiSigWallet{
    }
    
    withdrawalInfo[] withdrawalInformation;
+   
+   
+   //event
+   event SuccessfulTransfer(uint indexed value, address indexed recipient, uint indexed tranferRequestNo);
    
     //function to deposit Ether into this contract
     function depositEtherToContract(uint _totalOwners, uint _approvalsForTransfer) public payable returns (string memory, uint){
@@ -140,8 +137,14 @@ contract MultiSigWallet{
                 scanStatus = true;
                 transferPermissionSetting[requestNumber].withdrawStatus[i] = true;
                 TransferRequestID[msg.sender][requestNumber][withdrawalInformation.length] = transferNumber;
+                
+                require(InitialDeposit[_depositID].valueOfDeposit >= _transferValue, "Insufficient funds to perform transfer");
+                
                 withdrawalInformation.push(withdrawalInfo(msg.sender, _depositID, requestIndex, transferNumber, _transferValue, _recipient, false));
-                return ("Request Pending, you transfer number is", transferNumber) ;
+                
+                assert(InitialDeposit[_depositID].valueOfDeposit >= _transferValue);
+                
+                return ("Request accepted and pending, you transfer number is", transferNumber) ;
             }
         }
         
@@ -172,7 +175,8 @@ contract MultiSigWallet{
                                 countApproval++;
                                 if(countApproval>=transferPermissionSetting[value].minNoOfApproval){
                                 require (transferPermissionSetting[value].depositId == InitialDeposit[value].txnId, "Error at the comparison");
-                                
+                                balanceTranfer(_transferNo, withdrawalInformation[_transferNo].transferValue);
+                                resetWithdrawStatus(_transferNo);
                                 return (msg.sender, "Congratulation");
                                 }
                             }
@@ -185,7 +189,17 @@ contract MultiSigWallet{
         return (msg.sender, "Failed 2");
         }
         
-        function balanceTranfer(uint _transcationID, uint _valueOfTransfer, ) private {
-            
+        function balanceTranfer(uint _transferNo, uint _valueOfTransfer ) private returns (string memory, address, string memory, uint){
+            withdrawalInformation[_transferNo].finalApproval = true;
+            payable(withdrawalInformation[_transferNo].toTransfer).transfer(_valueOfTransfer);
+            InitialDeposit[withdrawalInformation[_transferNo].depositID].valueOfDeposit  -= _valueOfTransfer;
+            emit SuccessfulTransfer(_valueOfTransfer, withdrawalInformation[_transferNo].toTransfer, _transferNo);
+            return ("transferred to address: ", withdrawalInformation[_transferNo].toTransfer, " with a value of: ", _valueOfTransfer);
+        }
+        
+        function resetWithdrawStatus(uint _transferNo) private {
+            for (uint i = 0; transferPermissionSetting[withdrawalInformation[_transferNo].WithdrawSettingID].withdrawStatus.length <= i; i++){
+                transferPermissionSetting[withdrawalInformation[_transferNo].WithdrawSettingID].withdrawStatus[i] = false;
+            }
         }
 }
